@@ -1,0 +1,378 @@
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+from app.routes import proxy
+
+app = FastAPI(title="API Gateway")
+
+
+@app.get("/")
+def root():
+    return {"service": "gateway", "status": "running"}
+
+
+# Register proxy routes
+app.include_router(proxy.router)
+
+
+# ---------------------------------------------------------
+# CLEAN OPENAPI OVERRIDE (WORKS WITH SEPARATE ROUTES)
+# ---------------------------------------------------------
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    # Base OpenAPI schema
+    openapi_schema = get_openapi(
+        title="API Gateway",
+        version="1.0.0",
+        description="Gateway for all microservices",
+        routes=app.routes,
+    )
+
+    # Add BearerAuth security scheme
+    openapi_schema.setdefault("components", {})
+    openapi_schema["components"].setdefault("securitySchemes", {})
+
+    openapi_schema["components"]["securitySchemes"]["BearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+    }
+
+    # PUBLIC endpoints (no JWT required)
+    public_paths = [
+        "/auth/token",   # Gateway-facing path
+        "/token"         # Internal Auth service path
+    ]
+
+    # Apply BearerAuth to all other paths
+    for path, methods in openapi_schema["paths"].items():
+        for method, details in methods.items():
+
+            # If this is a public login endpoint → skip
+            if any(path.startswith(pub) for pub in public_paths):
+                continue
+
+            # Else protect with BearerAuth
+            details.setdefault("security", [{"BearerAuth": []}])
+
+    app.openapi_schema = openapi_schema
+    return openapi_schema
+
+
+app.openapi = custom_openapi
+
+
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import Response
+import httpx
+from shared.auth_utils import verify_jwt
+
+router = APIRouter()
+
+SERVICES = {
+    "auth": "http://localhost:9001",
+    "catalog": "http://localhost:9002",
+    "orders": "http://localhost:9003",
+}
+
+# ---------------------------------------------------------
+# SHARED INTERNAL PROXY LOGIC
+# ---------------------------------------------------------
+async def _proxy_request(service: str, path: str, request: Request):
+
+    # Validate microservice name
+    if service not in SERVICES:
+        raise HTTPException(status_code=404, detail="Unknown service")
+
+    full_path = f"{service}/{path}"
+
+    # Public endpoint — allow POST /auth/token without auth
+    if not full_path.startswith("auth/token"):
+        auth_header = request.headers.get("authorization")
+
+        if not auth_header:
+            raise HTTPException(status_code=401, detail="Missing Authorization header")
+
+        try:
+            payload = verify_jwt(auth_header)
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=str(e))
+
+        injected_headers = {
+            "x-user-id": payload.get("sub"),
+            "x-role": payload.get("role", "user"),
+            "x-username": payload.get("username", payload.get("sub")),
+        }
+    else:
+        injected_headers = {}
+
+    # Remove Authorization and Host headers
+    clean_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in ("authorization", "host")
+    }
+
+    clean_headers.update(injected_headers)
+
+    # Forward request body
+    body = await request.body()
+
+    # Final URL to the microservice
+    target_url = f"{SERVICES[service]}/{path}"
+
+    # Send request
+    async with httpx.AsyncClient() as client:
+        resp = await client.request(
+            method=request.method,
+            url=target_url,
+            content=body,
+            params=request.query_params,
+            headers=clean_headers,
+        )
+
+    # Return raw response back to requester
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        headers=dict(resp.headers),
+    )
+
+# ---------------------------------------------------------
+# 4 SEPARATE ROUTES FOR SWAGGER CLEAN UI
+# ---------------------------------------------------------
+
+@router.get("/{service}/{path:path}")
+async def proxy_get(service: str, path: str, request: Request):
+    return await _proxy_request(service, path, request)
+
+
+@router.post("/{service}/{path:path}")
+async def proxy_post(service: str, path: str, request: Request):
+    return await _proxy_request(service, path, request)
+
+
+@router.put("/{service}/{path:path}")
+async def proxy_put(service: str, path: str, request: Request):
+    return await _proxy_request(service, path, request)
+
+
+@router.delete("/{service}/{path:path}")
+async def proxy_delete(service: str, path: str, request: Request):
+    return await _proxy_request(service, path, request)
+
+
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
+from app.routers import auth, users
+
+app = FastAPI(title="Auth Service")
+
+
+@app.get("/")
+def root():
+    return {"service": "auth", "status": "running"}
+
+
+# Routers
+app.include_router(auth.router, prefix="/auth")
+app.include_router(users.router, prefix="/users")
+
+
+# Custom OpenAPI for BearerAuth
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title="Auth Service",
+        version="1.0.0",
+        description="JWT Auth Service",
+        routes=app.routes,
+    )
+
+    # Add BearerAuth
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT"
+        }
+    }
+
+    # Apply BearerAuth to all operations
+    for path in openapi_schema["paths"]:
+        for method in openapi_schema["paths"][path]:
+            openapi_schema["paths"][path][method]["security"] = [{"BearerAuth": []}]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
+
+from app.jwt_utils import create_access_token, create_refresh_token
+from app.hashing import verify_password
+from app.models import fake_db, UserInDB
+
+router = APIRouter(tags=["Auth"])
+
+
+@router.post("/token")
+def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    """
+    Exchange username+password for access + refresh tokens.
+    """
+    user: UserInDB = fake_db.get(form_data.username)
+
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Invalid credentials")
+
+    access = create_access_token({"sub": user.username})
+    refresh = create_refresh_token({"sub": user.username})
+
+    return {
+        "access_token": access,
+        "refresh_token": refresh,
+        "token_type": "bearer"
+    }
+
+from fastapi import APIRouter, Depends
+from app.jwt_utils import get_current_user
+from app.models import UserInDB
+
+router = APIRouter(tags=["Users"])
+
+
+@router.get("/me")
+def read_users_me(current_user: UserInDB = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "full_name": current_user.full_name,
+        "is_active": current_user.is_active,
+    }
+
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+import os
+
+from fastapi import Header, HTTPException, status
+
+from app.models import UserInDB, fake_db
+
+# ============================================================
+# Load RSA Keys
+# ============================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+KEYS_DIR = os.path.join(BASE_DIR, "keys")
+
+PRIVATE_KEY_PATH = os.path.join(KEYS_DIR, "private.pem")
+PUBLIC_KEY_PATH = os.path.join(KEYS_DIR, "public.pem")
+
+with open(PRIVATE_KEY_PATH, "r") as f:
+    PRIVATE_KEY = f.read()
+
+with open(PUBLIC_KEY_PATH, "r") as f:
+    PUBLIC_KEY = f.read()
+
+ALGO = "RS256"
+
+
+# ============================================================
+# Token Creation
+# ============================================================
+
+def create_access_token(data: dict, expires: int = 15):
+    """Create short-lived access token."""
+    to_encode = data.copy()
+    to_encode["exp"] = datetime.utcnow() + timedelta(minutes=expires)
+    return jwt.encode(to_encode, PRIVATE_KEY, algorithm=ALGO)
+
+
+def create_refresh_token(data: dict):
+    """Create long-lived refresh token."""
+    to_encode = data.copy()
+    to_encode["exp"] = datetime.utcnow() + timedelta(days=7)
+    return jwt.encode(to_encode, PRIVATE_KEY, algorithm=ALGO)
+
+
+# ============================================================
+# Token Verification
+# ============================================================
+
+def get_current_user(authorization: str = Header(None)) -> UserInDB:
+    """Verify JWT Access Token and return logged-in user.
+
+    This dependency extracts the Authorization header, supports `Bearer <token>` format,
+    decodes the token using the public key, and returns the user from the fake DB.
+    """
+    if authorization is None or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    token = authorization.split(" ", 1)[1]
+
+    try:
+        payload = jwt.decode(token, PUBLIC_KEY, algorithms=[ALGO])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user = fake_db.get(username)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return user
+
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return pwd_context.verify(plain, hashed)
+
+from pydantic import BaseModel
+
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+
+class User(BaseModel):
+    id: int
+    username: str
+    full_name: str | None = None
+    is_active: bool = True
+
+
+class UserInDB(User):
+    hashed_password: str
+
+
+# Temporary fake DB (replace later with Postgres)
+# Example Argon2 hash for password "tani123" (you can regenerate if you want):
+fake_db = {
+    "tani": UserInDB(
+        id=1,
+        username="tani",
+        full_name="Tani Varma",
+        is_active=True,
+        hashed_password="$argon2id$v=19$m=65536,t=3,p=4$MSakdO6d8/5/z1nLGUMoxQ$TbiqUK1Vrb7qILXWRQns2J1sg8xNEdzeZPTYhCFWGps"
+    )
+}
+
+this is my whole code of gatway and auth service

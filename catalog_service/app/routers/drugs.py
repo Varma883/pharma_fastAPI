@@ -1,0 +1,52 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.schemas import DrugCreate, DrugResponse
+from app.models import DrugModel
+from app.db import get_db
+from shared.auth_utils import verify_jwt
+
+router = APIRouter()
+
+
+
+#get all drugs
+@router.get("/", response_model=list[DrugResponse])
+def list_drugs(
+    db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
+):
+    return db.query(DrugModel).all()
+
+
+#get drug by id
+@router.get("/{drug_id}", response_model=DrugResponse)
+def get_drug_by_id(
+    drug_id: int,
+    db: Session=Depends(get_db),
+    user=Depends(verify_jwt),
+):
+    
+    drug= db.query(DrugModel).filter(DrugModel.id== drug_id).first()
+
+    if not drug:
+        raise HTTPException(status_code=404, detail="Drug not found")
+    return drug
+
+#create drug
+@router.post("/", response_model=DrugResponse)
+def create_drug(
+    payload: DrugCreate,
+    db: Session = Depends(get_db),
+    user=Depends(verify_jwt),
+):
+    # user is the decoded JWT payload
+    role = user.get("role", "user")
+    if role != "admin":
+        raise HTTPException(status_code=403, detail="Admins only can create drugs")
+
+    item = DrugModel(**payload.model_dump())
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item

@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "shared"
+version = "0.1.0"
+description = "Shared utilities for Pharma FastAPI project"
+authors = ["Varma"]
+
+packages = [
+    { include = "shared" }
+]
+
+include = [
+    "shared/keys/*"
+]
+
+[tool.poetry.dependencies]
+python = ">=3.13,<4.0"
+python-jose = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
