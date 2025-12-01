@@ -1,12 +1,15 @@
 from fastapi import FastAPI
-from app.routers.orders import router
+from app.db import Base, engine
+from app.routers.orders import router as orders_router
 
 app = FastAPI(title="Orders Service")
 
 
-@app.get("/")
-def root():
-    return {"service": "orders", "status": "running"}
+@app.on_event("startup")
+def startup():
+    print("📌 ORDERS SERVICE — Creating tables...")
+    Base.metadata.create_all(bind=engine)
+    print("✅ ORDERS SERVICE — Tables ready!")
 
 
 @app.get("/health")
@@ -14,5 +17,9 @@ def health():
     return {"service": "orders", "status": "ok"}
 
 
-# all routes under /orders
-app.include_router(router, prefix="/orders")
+@app.get("/")
+def root():
+    return {"service": "orders", "status": "running"}
+
+
+app.include_router(orders_router, prefix="/orders")

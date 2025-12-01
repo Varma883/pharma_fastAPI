@@ -1,0 +1,21 @@
+
+# python dependency
+/venv/
+__pycache__/*.py[cod]
+*$py.class
+
+
+#react/node_modules/
+node_modules/
+# Logs
+logs
+
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+# IDEs
+.vscode/
+.idea/
+*.iml
+

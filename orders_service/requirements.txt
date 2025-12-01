@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+SQLAlchemy
+psycopg2-binary
+pydantic
+requests
+python-jose
+pybreaker
+redis
+shared @ file:///app/../shared

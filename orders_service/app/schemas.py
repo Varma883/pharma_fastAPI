@@ -9,6 +9,10 @@ class OrderCreate(BaseModel):
     items: List[OrderItem]
 
 class Order(BaseModel):
-    order_id: int
+    id: int
+    username: str
     status: str
-    items: List[OrderItem]
+    items: list
+
+    class Config:
+        orm_mode = True

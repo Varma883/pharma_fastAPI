@@ -1,23 +1,20 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from app.models import Base
+from sqlalchemy.orm import sessionmaker, declarative_base
+from dotenv import load_dotenv
+import os
 
-DATABASE_URL = "sqlite:///./catalog.db"
+load_dotenv()
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False}
-)
+DATABASE_URL = os.getenv("CATALOG_DATABASE_URL")
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
+if not DATABASE_URL:
+    raise RuntimeError("CATALOG_DATABASE_URL missing!")
 
-# Create tables
-Base.metadata.create_all(bind=engine)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
 
 def get_db():
     db = SessionLocal()

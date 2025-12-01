@@ -9,6 +9,7 @@ SERVICES = {
     "auth": "http://localhost:9001",
     "catalog": "http://localhost:9002",
     "orders": "http://localhost:9003",
+    "inventory": "http://localhost:9004",
 }
 
 
@@ -17,13 +18,15 @@ async def _proxy_request(service: str, path: str | None, request: Request):
     if service not in SERVICES:
         raise HTTPException(404, "Unknown service")
 
-    # ---- PUBLIC LOGIN ----
-    is_auth_login = (service == "auth" and path in ["token", "token/"])
+    # -------- LOGIN + REGISTER ARE PUBLIC --------
+    public_auth_paths = {"token", "login", "register"}
+    is_public_auth = (service == "auth" and (path.split("/")[0] in public_auth_paths))
 
+    # -------- JWT VALIDATION FOR SECURED ROUTES --------
     auth_header = request.headers.get("authorization")
     injected_headers = {}
 
-    if not is_auth_login:
+    if not is_public_auth:
         if not auth_header:
             raise HTTPException(401, "Missing Authorization header")
 
@@ -36,32 +39,37 @@ async def _proxy_request(service: str, path: str | None, request: Request):
         }
 
     # ====================================================
-    # CORRECT PATH GENERATION  (FIXED 🔥)
+    # CORRECT PATH MAPPING
     # ====================================================
+
     if service == "auth":
-        # /auth/token -> http://localhost:9001/auth/token
-        target_path = f"auth/{path}" if path else "auth"
+    # /auth/login → http://localhost:9001/auth/login
+       target_path = f"auth/{path}".rstrip("/")
+    elif service == "inventory":
+    # /inventory/reserve → http://localhost:9004/inventory/reserve
+      target_path = f"inventory/{path}".rstrip("/")
 
-    else:
-        # For catalog + orders:
-        # /catalog/drugs -> /drugs
-        # /orders/ -> /orders
-        target_path = path if path else ""
+    elif service == "orders":
+    # MUST retain /orders prefix
+    # /orders/ → http://localhost:9003/orders/
+      target_path = f"orders/{path}".rstrip("/")
+
+    elif service == "catalog":
+    # /catalog/drugs → http://localhost:9002/drugs
+       target_path = path.lstrip("/")
+
     # ====================================================
 
-    # Build URL
-    target_url = f"{SERVICES[service].rstrip('/')}/{target_path.lstrip('/')}"
-    if target_url.endswith("//"):
-        target_url = target_url[:-1]
+    # Final URL
+    target_url = f"{SERVICES[service].rstrip('/')}/{target_path}"
 
     # Clean headers
     clean_headers = {k: v for k, v in request.headers.items()}
-    for h in ["host", "connection", "keep-alive", "proxy-authorization",
-              "proxy-authenticate", "upgrade", "te"]:
+    for h in [
+        "host", "connection", "keep-alive", "proxy-authorization",
+        "proxy-authenticate", "upgrade", "te"
+    ]:
         clean_headers.pop(h, None)
-
-    if auth_header:
-        clean_headers["authorization"] = auth_header
 
     clean_headers.update(injected_headers)
 
@@ -79,12 +87,15 @@ async def _proxy_request(service: str, path: str | None, request: Request):
     return Response(
         status_code=resp.status_code,
         content=resp.content,
-        headers={k: v for k, v in resp.headers.items()
-                 if k.lower() in ("content-type", "content-length")}
+        headers={
+            k: v for k, v in resp.headers.items()
+            if k.lower() in ("content-type", "content-length")
+        }
     )
 
 
-# Routes
+# ------------- PROXY ROUTES -----------------
+
 @router.api_route("/{service}/{path:path}",
                   methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy_any(service: str, path: str, request: Request):
@@ -94,4 +105,4 @@ async def proxy_any(service: str, path: str, request: Request):
 @router.api_route("/{service}",
                   methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def proxy_root(service: str, request: Request):
-    return await _proxy_request(service, path="", request=request)
+    return await _proxy_request(service, "", request)

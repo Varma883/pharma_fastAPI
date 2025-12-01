@@ -1,10 +1,8 @@
 from sqlalchemy import Column, Integer, String
-from sqlalchemy.orm import declarative_base
+from app.db import Base
 
-Base = declarative_base()
-
-class DrugModel(Base):
-    __tablename__ = "drugs"
+class Product(Base):
+    __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)

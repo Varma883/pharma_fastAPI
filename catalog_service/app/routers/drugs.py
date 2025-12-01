@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.schemas import DrugCreate, DrugResponse
-from app.models import DrugModel
+from app.models import Product
 from app.db import get_db
 from shared.auth_utils import verify_jwt
 
@@ -16,7 +16,7 @@ def list_drugs(
     db: Session = Depends(get_db),
     user=Depends(verify_jwt),
 ):
-    return db.query(DrugModel).all()
+    return db.query(Product).all()
 
 
 #get drug by id
@@ -27,7 +27,7 @@ def get_drug_by_id(
     user=Depends(verify_jwt),
 ):
     
-    drug= db.query(DrugModel).filter(DrugModel.id== drug_id).first()
+    drug= db.query(Product).filter(Product.id== drug_id).first()
 
     if not drug:
         raise HTTPException(status_code=404, detail="Drug not found")
@@ -45,7 +45,7 @@ def create_drug(
     if role != "admin":
         raise HTTPException(status_code=403, detail="Admins only can create drugs")
 
-    item = DrugModel(**payload.model_dump())
+    item = Product(**payload.model_dump())
     db.add(item)
     db.commit()
     db.refresh(item)

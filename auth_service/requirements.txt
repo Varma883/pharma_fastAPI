@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+python-jose
+passlib[bcrypt]
+SQLAlchemy
+psycopg2-binary
+pydantic
+shared @ file:///app/../shared

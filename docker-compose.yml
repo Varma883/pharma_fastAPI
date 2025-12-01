@@ -1,0 +1,163 @@
+version: "3.9"
+
+services:
+  # ====================
+  # AUTH SERVICE
+  # ====================
+  auth_service:
+    build: ./auth_service
+    container_name: auth_service
+    env_file:
+      - .env
+    ports:
+      - "9001:9001"
+    depends_on:
+      - auth_db
+    networks:
+      - pharma_net
+
+  auth_db:
+    image: postgres:15
+    container_name: auth_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auth_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - auth_db_data:/var/lib/postgresql/data
+    networks:
+      - pharma_net
+
+  # ====================
+  # CATALOG SERVICE
+  # ====================
+  catalog_service:
+    build: ./catalog_service
+    container_name: catalog_service
+    env_file:
+      - .env
+    ports:
+      - "9002:9002"
+    depends_on:
+      - catalog_db
+    networks:
+      - pharma_net
+
+  catalog_db:
+    image: postgres:15
+    container_name: catalog_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: catalog_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - catalog_db_data:/var/lib/postgresql/data
+    networks:
+      - pharma_net
+
+  # ====================
+  # ORDERS SERVICE
+  # ====================
+  orders_service:
+    build: ./orders_service
+    container_name: orders_service
+    env_file:
+      - .env
+    ports:
+      - "9003:9003"
+    depends_on:
+      - orders_db
+      - redis
+    networks:
+      - pharma_net
+
+  orders_db:
+    image: postgres:15
+    container_name: orders_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - orders_db_data:/var/lib/postgresql/data
+    networks:
+      - pharma_net
+
+  # ====================
+  # INVENTORY SERVICE
+  # ====================
+  inventory_service:
+    build: ./inventory_service
+    container_name: inventory_service
+    env_file:
+      - .env
+    ports:
+      - "9004:9004"
+    depends_on:
+      - inventory_db
+    networks:
+      - pharma_net
+
+  inventory_db:
+    image: postgres:15
+    container_name: inventory_db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - inventory_db_data:/var/lib/postgresql/data
+    networks:
+      - pharma_net
+
+  # ====================
+  # REDIS (used by orders)
+  # ====================
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - pharma_net
+
+  # ====================
+  # API GATEWAY
+  # ====================
+  gateway:
+    build: ./gateway
+    container_name: gateway
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - auth_service
+      - catalog_service
+      - orders_service
+    networks:
+      - pharma_net
+
+# ====================
+# NETWORK + VOLUMES
+# ====================
+networks:
+  pharma_net:
+
+volumes:
+  auth_db_data:
+  catalog_db_data:
+  orders_db_data:
+  inventory_db_data:

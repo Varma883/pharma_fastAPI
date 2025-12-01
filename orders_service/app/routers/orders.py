@@ -1,46 +1,62 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
 from shared.auth_utils import verify_jwt
-from app.schemas import OrderCreate, Order
-import itertools
+from app.db import get_db
+from app.models import OrderModel
+from app.schemas import Order, OrderCreate
 
 router = APIRouter()
 
-# AUTO INCREMENT ORDER IDs
-order_counter = itertools.count(1)
 
-# In-memory store (replace with DB later)
-ORDERS_DB = []
-
-# Simulated inventory check (no external service required)
+# fake inventory check for now
 def mock_inventory(items):
-    # For now just pretend inventory is always available
     return True
 
 
+# ===========================================================
+# CREATE ORDER — supports BOTH /orders and /orders/
+# ===========================================================
+@router.post("", response_model=Order)
 @router.post("/", response_model=Order)
 def create_order(
     payload: OrderCreate,
-    user=Depends(verify_jwt)
+    user=Depends(verify_jwt),
+    db: Session = Depends(get_db)
 ):
-    # Step 1 — Check inventory
-    ok = mock_inventory(payload.items)
-    if not ok:
-        raise HTTPException(status_code=400, detail="Inventory reservation failed")
+    if not mock_inventory(payload.items):
+        raise HTTPException(400, "Inventory reservation failed")
 
-    # Step 2 — Create order
-    order_id = next(order_counter)
+    username = user["sub"]
 
-    order_record = {
-        "order_id": order_id,
-        "status": "CONFIRMED",
-        "items": [item.model_dump() for item in payload.items],
-    }
+    order = OrderModel(
+        username=username,
+        items=[item.model_dump() for item in payload.items],
+        status="CONFIRMED"
+    )
 
-    ORDERS_DB.append(order_record)
+    db.add(order)
+    db.commit()
+    db.refresh(order)
 
-    return order_record
+    return order
 
 
+# ===========================================================
+# LIST ORDERS — supports BOTH /orders and /orders/
+# ===========================================================
+@router.get("", response_model=list[Order])
 @router.get("/", response_model=list[Order])
-def list_orders(user=Depends(verify_jwt)):
-    return ORDERS_DB
+def list_orders(
+    user=Depends(verify_jwt),
+    db: Session = Depends(get_db)
+):
+    username = user["sub"]
+
+    # normal users only see their orders
+    # admin/superadmin see all
+    if user["role"] in ["admin", "superadmin"]:
+        result = db.query(OrderModel).all()
+    else:
+        result = db.query(OrderModel).filter(OrderModel.username == username).all()
+
+    return result
