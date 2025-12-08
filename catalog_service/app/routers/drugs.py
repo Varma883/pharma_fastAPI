@@ -44,6 +44,10 @@ def create_drug(
     role = user.get("role", "user")
     if role != "admin":
         raise HTTPException(status_code=403, detail="Admins only can create drugs")
+    
+    existing_drug = db.query(Product).filter(Product.ndc == payload.ndc).first()
+    if existing_drug:
+        raise HTTPException(status_code=400, detail="Drug with this NDC already exists")
 
     item = Product(**payload.model_dump())
     db.add(item)
