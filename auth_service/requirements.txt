@@ -2,7 +2,10 @@ fastapi
 uvicorn
 python-jose
 passlib[bcrypt]
+argon2-cffi
 SQLAlchemy
 psycopg2-binary
 pydantic
-shared @ file:///app/../shared
+python-dotenv
+python-multipart
+

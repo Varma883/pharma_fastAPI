@@ -7,4 +7,5 @@ requests
 python-jose
 pybreaker
 redis
-shared @ file:///app/../shared
+python-dotenv
+

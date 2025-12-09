@@ -1,18 +1,21 @@
 version: "3.9"
 
 services:
-  # ====================
+  #############################################
   # AUTH SERVICE
-  # ====================
+  #############################################
   auth_service:
-    build: ./auth_service
+    build:
+      context: .
+      dockerfile: auth_service/Dockerfile
     container_name: auth_service
     env_file:
-      - .env
+      - auth_service/.env
     ports:
       - "9001:9001"
     depends_on:
-      - auth_db
+      auth_db:
+        condition: service_healthy
     networks:
       - pharma_net
 
@@ -28,21 +31,29 @@ services:
       - "5433:5432"
     volumes:
       - auth_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
     networks:
       - pharma_net
 
-  # ====================
+  #############################################
   # CATALOG SERVICE
-  # ====================
+  #############################################
   catalog_service:
-    build: ./catalog_service
+    build:
+      context: .
+      dockerfile: catalog_service/Dockerfile
     container_name: catalog_service
     env_file:
-      - .env
+      - catalog_service/.env
     ports:
       - "9002:9002"
     depends_on:
-      - catalog_db
+      catalog_db:
+        condition: service_healthy
     networks:
       - pharma_net
 
@@ -58,22 +69,33 @@ services:
       - "5434:5432"
     volumes:
       - catalog_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
     networks:
       - pharma_net
 
-  # ====================
+  #############################################
   # ORDERS SERVICE
-  # ====================
+  #############################################
   orders_service:
-    build: ./orders_service
+    build:
+      context: .
+      dockerfile: orders_service/Dockerfile
     container_name: orders_service
     env_file:
-      - .env
+      - orders_service/.env
     ports:
       - "9003:9003"
     depends_on:
-      - orders_db
-      - redis
+      orders_db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      inventory_service:
+        condition: service_started
     networks:
       - pharma_net
 
@@ -89,21 +111,29 @@ services:
       - "5435:5432"
     volumes:
       - orders_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
     networks:
       - pharma_net
 
-  # ====================
+  #############################################
   # INVENTORY SERVICE
-  # ====================
+  #############################################
   inventory_service:
-    build: ./inventory_service
+    build:
+      context: .
+      dockerfile: inventory_service/Dockerfile
     container_name: inventory_service
     env_file:
-      - .env
+      - inventory_service/.env
     ports:
       - "9004:9004"
     depends_on:
-      - inventory_db
+      inventory_db:
+        condition: service_healthy
     networks:
       - pharma_net
 
@@ -119,12 +149,17 @@ services:
       - "5436:5432"
     volumes:
       - inventory_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
     networks:
       - pharma_net
 
-  # ====================
-  # REDIS (used by orders)
-  # ====================
+  #############################################
+  # REDIS
+  #############################################
   redis:
     image: redis:7
     container_name: redis
@@ -133,26 +168,33 @@ services:
     networks:
       - pharma_net
 
-  # ====================
+  #############################################
   # API GATEWAY
-  # ====================
+  #############################################
   gateway:
-    build: ./gateway
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
     container_name: gateway
     env_file:
-      - .env
+      - gateway/.env
     ports:
       - "8000:8000"
     depends_on:
-      - auth_service
-      - catalog_service
-      - orders_service
+      auth_service:
+        condition: service_started
+      catalog_service:
+        condition: service_started
+      orders_service:
+        condition: service_started
+      inventory_service:
+        condition: service_started
     networks:
       - pharma_net
 
-# ====================
-# NETWORK + VOLUMES
-# ====================
+#############################################
+# NETWORKS & VOLUMES
+#############################################
 networks:
   pharma_net:
 

@@ -4,4 +4,4 @@ SQLAlchemy
 psycopg2-binary
 pydantic
 python-jose
-shared @ file:///app/../shared
+python-dotenv

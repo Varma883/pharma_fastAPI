@@ -1,10 +1,14 @@
-From python:3.11-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
-COPY ..
+COPY shared /shared
+RUN pip install --no-cache-dir /shared
 
-RUN pip install --no-cache-dir -r requirements.txt  
+COPY gateway/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-CMD ["uvicorn", "app.main:app", "--host", "0,0,0,0", "--port", "8000"]
+COPY gateway/app ./app
 
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

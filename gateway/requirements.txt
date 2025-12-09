@@ -3,4 +3,4 @@ uvicorn
 httpx
 python-jose
 pydantic
-shared @ file:///app/../shared
+python-dotenv

@@ -4,38 +4,59 @@ from shared.auth_utils import verify_jwt
 from app.db import get_db
 from app.models import OrderModel
 from app.schemas import Order, OrderCreate
-from app.services.inventory_client import reserve_items
+from app.services.inventory_client import safe_reserve
+import requests
 
 router = APIRouter()
 
-# ===========================================================
-# CREATE ORDER — supports BOTH /orders and /orders/
-# ===========================================================
+
 @router.post("", response_model=Order)
 @router.post("/", response_model=Order)
-async def create_order(
+def create_order(
     payload: OrderCreate,
     user=Depends(verify_jwt),
     db: Session = Depends(get_db)
 ):
-    # Step 1 – Reserve inventory
+    # 1) Prepare items
     order_items = [item.model_dump() for item in payload.items]
 
-    # 🔥 Pass token to inventory service
-    token = user["token"]  # ensure verify_jwt returns "token"
+    # 2) Extract raw token (we put this into payload["token"] in shared/auth_utils)
+    token = user.get("token")
 
-    reserve_result = await reserve_items(order_items, token)
+    # 3) Reserve inventory with circuit breaker + Redis fallback
+    try:
+        reserve_result = safe_reserve(order_items, token)
+    except requests.RequestException:
+        # Inventory is DOWN but breaker not yet open -> transient network failure
+        raise HTTPException(
+            status_code=503,
+            detail="Inventory service unavailable, please try again later."
+        )
 
-    if reserve_result.get("status") != "reserved":
-        raise HTTPException(status_code=400, detail="Inventory reservation failed")
+    status = "CONFIRMED"
 
-    # Step 2 – Create order
+    if reserve_result.get("status") == "reserved":
+        status = "CONFIRMED"
+
+    elif reserve_result.get("status") == "reserved_from_cache":
+        # Inventory is down, but cached info says it's fine.
+        # Mark order differently so ops can review or reconcile later.
+        status = "PENDING_RESERVE"
+
+    else:
+        # Any other status means failure or unsafe fallback.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Inventory reservation failed: {reserve_result}"
+        )
+
+    # 4) Create order in DB
     username = user["sub"]
 
     order = OrderModel(
         username=username,
         items=order_items,
-        status="CONFIRMED"
+        status=status,
     )
 
     db.add(order)
@@ -44,9 +65,7 @@ async def create_order(
 
     return order
 
-# ===========================================================
-# LIST ORDERS — supports BOTH /orders and /orders/
-# ===========================================================
+
 @router.get("", response_model=list[Order])
 @router.get("/", response_model=list[Order])
 def list_orders(
