@@ -5,89 +5,108 @@ from shared.auth_utils import verify_jwt
 
 router = APIRouter()
 
-SERVICE_MAP = {
-    "auth": "http://auth_service:9001",
-    "catalog": "http://catalog_service:9002",
-    "orders": "http://orders_service:9003",
-    "inventory": "http://inventory_service:9004",
+# Configuration for downstream services
+# 'prepend_service_name': If True, /service/path -> http://host/service/path
+#                         If False, /service/path -> http://host/path
+SERVICE_CONFIG = {
+    "auth": {
+        "url": "http://auth_service:9001",
+        "prepend_service_name": True
+    },
+    "catalog": {
+        "url": "http://catalog_service:9002",
+        "prepend_service_name": False
+    },
+    "orders": {
+        "url": "http://orders_service:9003",
+        "prepend_service_name": True
+    },
+    "inventory": {
+        "url": "http://inventory_service:9004",
+        "prepend_service_name": True
+    },
 }
 
-
 async def _proxy_request(service: str, path: str | None, request: Request):
-    if service not in SERVICE_MAP:
+    if service not in SERVICE_CONFIG:
         raise HTTPException(404, "Unknown service")
 
+    service_conf = SERVICE_CONFIG[service]
+    
     # -------- LOGIN + REGISTER ARE PUBLIC --------
-    public_auth_paths = {"token", "login", "register"}
+    public_auth_paths = {"token", "login", "register", "docs", "openapi.json"} 
+    # Added docs/openapi for convenience if needed, strictly keeping to request is fine too.
+    # Original logic only checked first segment.
+    
+    path_segments = path.split("/") if path else []
+    first_segment = path_segments[0] if path_segments else ""
+
     is_public_auth = (
         service == "auth"
-        and path is not None
-        and path.split("/")[0] in public_auth_paths
+        and first_segment in public_auth_paths
     )
 
     # -------- JWT VALIDATION FOR SECURED ROUTES --------
     auth_header = request.headers.get("authorization")
     injected_headers = {}
 
-    if not is_public_auth:
+    if not is_public_auth and request.method != "OPTIONS":
         if not auth_header:
             raise HTTPException(401, "Missing Authorization header")
 
         payload = verify_jwt(auth_header)
-
         injected_headers = {
-            "x-user-id": payload.get("sub"),
-            "x-username": payload.get("username", payload.get("sub")),
+            "x-user-id": str(payload.get("sub")),
+            "x-username": payload.get("username", str(payload.get("sub"))),
             "x-role": payload.get("role", "user"),
         }
 
     # ====================================================
-    # CORRECT PATH MAPPING
+    # DYNAMIC PATH CONSTRUCTION
     # ====================================================
-    if service == "auth":
-        # /auth/login → http://auth_service:9001/auth/login
-        target_path = f"auth/{path}".rstrip("/") if path else "auth"
+    base_url = service_conf["url"].rstrip("/")
+    clean_path = path.lstrip("/") if path else ""
+    
+    if service_conf["prepend_service_name"]:
+        # e.g. /auth/login -> internal /auth/login
+        target_path = f"{service}/{clean_path}"
+    else:
+        # e.g. /catalog/drugs -> internal /drugs
+        target_path = clean_path
 
-    elif service == "inventory":
-        # /inventory/reserve → http://inventory_service:9004/inventory/reserve
-        target_path = f"inventory/{path}".rstrip("/") if path else "inventory"
-
-    elif service == "orders":
-        # /orders/ → http://orders_service:9003/orders/
-        target_path = f"orders/{path}".rstrip("/") if path else "orders"
-
-    elif service == "catalog":
-        # /catalog/drugs → http://catalog_service:9002/drugs
-        target_path = path.lstrip("/") if path else ""
-
-    base = SERVICE_MAP[service].rstrip("/")
-    target_url = f"{base}/{target_path}" if target_path else base
+    # Fix potential double slashes if target_path is empty (rare but possible)
+    target_path = target_path.strip("/")
+    
+    target_url = f"{base_url}/{target_path}"
 
     # Clean headers
     clean_headers = {k: v for k, v in request.headers.items()}
-    for h in [
-        "host",
-        "connection",
-        "keep-alive",
-        "proxy-authorization",
-        "proxy-authenticate",
-        "upgrade",
-        "te",
-    ]:
+    # Headers to drop as per RFC or practical proxying
+    hop_by_hop = {
+        "host", "connection", "keep-alive", "proxy-authorization", 
+        "proxy-authenticate", "upgrade", "te", "transfer-encoding"
+    }
+    for h in hop_by_hop:
         clean_headers.pop(h, None)
-
+    
     clean_headers.update(injected_headers)
 
+    # Stream the body
     body = await request.body()
 
+    # We use a timeout? Default is fine for now.
     async with httpx.AsyncClient() as client:
-        resp = await client.request(
-            method=request.method,
-            url=target_url,
-            params=request.query_params,
-            content=body,
-            headers=clean_headers,
-        )
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=target_url,
+                params=request.query_params,
+                content=body,
+                headers=clean_headers,
+                timeout=60.0 
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=503, detail=f"Service {service} unavailable: {str(exc)}")
 
     return Response(
         status_code=resp.status_code,
@@ -95,22 +114,20 @@ async def _proxy_request(service: str, path: str | None, request: Request):
         headers={
             k: v
             for k, v in resp.headers.items()
-            if k.lower() in ("content-type", "content-length")
+            if k.lower() not in hop_by_hop
         },
     )
 
-
 @router.api_route(
     "/{service}/{path:path}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
 )
 async def proxy_any(service: str, path: str, request: Request):
     return await _proxy_request(service, path, request)
 
-
 @router.api_route(
     "/{service}",
-    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
 )
 async def proxy_root(service: str, request: Request):
     return await _proxy_request(service, "", request)

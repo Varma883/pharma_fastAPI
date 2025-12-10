@@ -11,6 +11,7 @@ router = APIRouter()
 
 
 #get all drugs
+@router.get("", response_model=list[DrugResponse])
 @router.get("/", response_model=list[DrugResponse])
 def list_drugs(
     db: Session = Depends(get_db),
@@ -34,6 +35,7 @@ def get_drug_by_id(
     return drug
 
 #create drug
+@router.post("", response_model=DrugResponse)
 @router.post("/", response_model=DrugResponse)
 def create_drug(
     payload: DrugCreate,
