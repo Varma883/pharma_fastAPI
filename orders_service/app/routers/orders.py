@@ -80,3 +80,40 @@ def list_orders(
         result = db.query(OrderModel).filter(OrderModel.username == username).all()
 
     return result
+
+
+@router.get("/check-inventory/{product_id}")
+def check_inventory_proxy(
+    product_id: int,
+    user=Depends(verify_jwt)
+):
+    """
+    Helper endpoint to populate Redis cache for a product.
+    Calls internal inventory service -> caches result in Redis.
+    """
+    from requests import RequestException
+    from fastapi import HTTPException
+    from app.services.inventory_client import call_inventory_get, get_cached_inventory
+    
+    token = user.get("token")
+    
+    try:
+        # 1. Try to get fresh data (this also updates cache)
+        return call_inventory_get(product_id, token)
+        
+    except RequestException:
+        # 2. If Inventory is down, try to read from Redis Cache
+        cached_qty = get_cached_inventory(product_id)
+        
+        if cached_qty is not None:
+             return {
+                 "product_id": product_id, 
+                 "quantity": cached_qty,
+                 "source": "redis_cache" # Flag to show it came from cache
+             }
+             
+        # 3. If no cache, then actual 503
+        raise HTTPException(
+            status_code=503, 
+            detail="Inventory service unavailable and no cache found."
+        )

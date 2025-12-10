@@ -40,12 +40,19 @@ def call_inventory_get(product_id: int, token: str | None = None) -> dict:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    resp = requests.get(
-        f"{INVENTORY_BASE}/inventory/{product_id}",
-        headers=headers,
-        timeout=2,
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.get(
+            f"{INVENTORY_BASE}/inventory/{product_id}",
+            headers=headers,
+            timeout=2,
+        )
+        resp.raise_for_status()
+    except requests.RequestException:
+        # If inventory is down, we can't fetch fresh data.
+        # The breaker might open on repeated failures.
+        # We re-raise to let the breaker know it failed, OR we handle it if we want silent failure.
+        # But here, we want the breaker to see the failure.
+        raise
     data = resp.json()
 
     # Expecting shape: {"product_id": ..., "quantity": ...}
