@@ -1,15 +1,19 @@
 from fastapi import FastAPI
 from app.db import Base, engine
 from app.routers.drugs import router as drugs_router
+import logging
 
 app = FastAPI(title="Catalog Service")
 
 
+logger = logging.getLogger("uvicorn")
+
 @app.on_event("startup")
 def startup():
-    print("📌 CATALOG SERVICE — Creating tables...")
+    logger.info("CATALOG SERVICE — Creating tables...")
     Base.metadata.create_all(bind=engine)
-    print("✅ CATALOG SERVICE — Tables ready!")
+    logger.info("CATALOG SERVICE — Tables ready!")
+
 
 
 @app.get("/health")
