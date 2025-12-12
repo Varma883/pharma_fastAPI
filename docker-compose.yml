@@ -93,9 +93,13 @@ services:
       orders_db:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       inventory_service:
         condition: service_started
+    environment:
+      # make Redis & Catalog discoverable to the orders service if needed
+      - REDIS_URL=redis://redis:6379/0
+      - CATALOG_INTERNAL_URL=http://catalog_service:9002
     networks:
       - pharma_net
 
@@ -134,6 +138,13 @@ services:
     depends_on:
       inventory_db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      catalog_service:
+        condition: service_started
+    environment:
+      - CATALOG_INTERNAL_URL=http://catalog_service:9002
+      - REDIS_URL=redis://redis:6379/0
     networks:
       - pharma_net
 
@@ -165,6 +176,12 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+    healthcheck:
+      # redis-cli is available in the official image
+      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
     networks:
       - pharma_net
 
@@ -189,6 +206,8 @@ services:
         condition: service_started
       inventory_service:
         condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - pharma_net
 
