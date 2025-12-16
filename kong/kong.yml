@@ -1,0 +1,97 @@
+_format_version: "3.0"
+
+services:
+
+  ############################################################
+  # AUTH SERVICE
+  ############################################################
+  - name: auth-service
+    url: http://auth_service:9001
+    routes:
+      # PUBLIC (NO JWT)
+      - name: auth-public
+        paths:
+          - /auth/register
+          - /auth/login
+        strip_path: false
+        methods:
+          - POST
+
+      # SECURED
+      - name: auth-secure
+        paths:
+          - /auth
+        strip_path: false
+        plugins:
+          - name: jwt
+
+  ############################################################
+  # CATALOG SERVICE
+  ############################################################
+  - name: catalog-service
+    # Point to NGINX (Internal LB) instead of direct container
+    url: http://nginx:5000/catalog
+    routes:
+      - name: catalog-route
+        paths:
+          - /catalog
+        strip_path: true
+        plugins:
+          - name: jwt
+
+  ############################################################
+  # ORDERS SERVICE
+  ############################################################
+  - name: orders-service
+    # Point to NGINX (Internal LB) instead of direct container
+    url: http://nginx:5000/orders
+    routes:
+      - name: orders-route
+        paths:
+          - /orders
+        strip_path: true
+        plugins:
+          - name: jwt
+
+  ############################################################
+  # INVENTORY SERVICE
+  ############################################################
+  - name: inventory-service
+    url: http://inventory_service:9004
+    routes:
+      - name: inventory-route
+        paths:
+          - /inventory
+        strip_path: false
+        plugins:
+          - name: jwt
+
+############################################################
+# GLOBAL PLUGINS
+############################################################
+plugins:
+  - name: rate-limiting
+    config:
+      minute: 100
+      policy: redis
+      redis:
+        host: redis
+
+############################################################
+# CONSUMERS
+############################################################
+consumers:
+  - username: pharma-client
+    jwt_secrets:
+      - key: pharma-auth
+        algorithm: RS256
+        rsa_public_key: |
+          -----BEGIN PUBLIC KEY-----
+          MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuIDh+leKlDhwGukSEzEx
+          u6oxDDyZ7JvTQc1884ND1KHH8wzAe8TEtU/kv98cIibIkjOynF+5rKQZAQGepszM
+          Pw4wLJdEBesw4sZm7U7m1Xxui3ZxtOR+gjjL55G9e5QW/Q5xPhTqv25oAf7EC8I+
+          H0VZNmJuWimYP5cf5ZmAZWlgw5AkS8TGUx4As8qn/Mvb5HLxqdEHtMRhMi2ZL3wY
+          IGJwtvQ+pyjmLiWsXfSzuf1OP8w/wCNnPHfJKE0gBV7HnokX8ozIMVun6AEJKN5q
+          hm81MgfWDdYOu7Mo4V4IIm5SDgcrfPxbi3hLYlFsoBxZ7NLTfI9I9tre9sp7XIeV
+          SQIDAQAB
+          -----END PUBLIC KEY-----

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.db import Base, engine
 from app.routers.orders import router as orders_router
+import socket
 
 app = FastAPI(title="Orders Service")
 
@@ -19,7 +20,11 @@ def health():
 
 @app.get("/")
 def root():
-    return {"service": "orders", "status": "running"}
+    return {
+        "service": "orders",
+        "hostname": socket.gethostname(),
+        "status": "running"
+    }
 
 
 app.include_router(orders_router, prefix="/orders")

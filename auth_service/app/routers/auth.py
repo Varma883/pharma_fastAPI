@@ -1,14 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from fastapi import Request
-from app.jwt_utils import create_access_token, create_refresh_token
+from app.jwt_utils import create_access_token, create_refresh_token, verify_access_token
 from app.hashing import verify_password, hash_password
 from app.db import get_db
 from app.models import User
 from app.schemas import UserRegister
 
 router = APIRouter(tags=["Auth"])
+security = HTTPBearer()
+
+def get_current_user_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    if not payload:
+         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -28,12 +36,19 @@ def register_user(
     # If trying to create a superadmin:
     if payload.role == "superadmin":
         if user_count > 0:  # only enforce for non-first user
-            role = request.headers.get("x-role")
-            if role != "superadmin":
-                raise HTTPException(
-                    status_code=403,
-                    detail="Only superadmin can create another superadmin."
-                )
+            # SECURITY FIX: Check for Authorization header instead of x-role
+            # We manually check header here to avoid imposing strict auth on first run
+            auth_header = request.headers.get("Authorization")
+            if not auth_header:
+                 raise HTTPException(status_code=403, detail="Auth required for superadmin creation")
+            
+            try:
+                token = auth_header.split(" ")[1]
+                claims = verify_access_token(token)
+                if not claims or claims.get("role") != "superadmin":
+                     raise HTTPException(status_code=403, detail="Only superadmin can create another superadmin.")
+            except Exception:
+                 raise HTTPException(status_code=403, detail="Invalid auth for superadmin creation")
 
     existing = db.query(User).filter(User.username == payload.username).first()
     if existing:
@@ -96,13 +111,14 @@ def login(
 
 
 @router.get("/users")
-def list_users(request: Request, db: Session = Depends(get_db)):
+def list_users(
+    payload=Depends(get_current_user_token),
+    db: Session = Depends(get_db)
+):
     """
     Only SUPERADMIN can list all users.
-    Role is passed from Gateway as header: x-role
     """
-
-    role = request.headers.get("x-role")  # injected by gateway
+    role = payload.get("role")
 
     if role != "superadmin":
         raise HTTPException(

@@ -1,9 +1,9 @@
 version: "3.9"
 
 services:
-  #############################################
+  ###########################################################
   # AUTH SERVICE
-  #############################################
+  ###########################################################
   auth_service:
     build:
       context: .
@@ -39,9 +39,9 @@ services:
     networks:
       - pharma_net
 
-  #############################################
-  # CATALOG SERVICE
-  #############################################
+  ###########################################################
+  # CATALOG SERVICE + REPLICA
+  ###########################################################
   catalog_service:
     build:
       context: .
@@ -54,6 +54,16 @@ services:
     depends_on:
       catalog_db:
         condition: service_healthy
+    networks:
+      - pharma_net
+
+  catalog_service_replica:
+    build:
+      context: .
+      dockerfile: catalog_service/Dockerfile
+    container_name: catalog_service_replica
+    env_file:
+      - catalog_service/.env
     networks:
       - pharma_net
 
@@ -77,9 +87,9 @@ services:
     networks:
       - pharma_net
 
-  #############################################
-  # ORDERS SERVICE
-  #############################################
+  ###########################################################
+  # ORDERS SERVICE + REPLICA
+  ###########################################################
   orders_service:
     build:
       context: .
@@ -89,17 +99,27 @@ services:
       - orders_service/.env
     ports:
       - "9003:9003"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_INTERNAL_URL: http://catalog_service:9002
     depends_on:
       orders_db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      inventory_service:
-        condition: service_started
+    networks:
+      - pharma_net
+
+  orders_service_replica:
+    build:
+      context: .
+      dockerfile: orders_service/Dockerfile
+    container_name: orders_service_replica
+    env_file:
+      - orders_service/.env
     environment:
-      # make Redis & Catalog discoverable to the orders service if needed
-      - REDIS_URL=redis://redis:6379/0
-      - CATALOG_INTERNAL_URL=http://catalog_service:9002
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_INTERNAL_URL: http://catalog_service:9002
     networks:
       - pharma_net
 
@@ -123,9 +143,9 @@ services:
     networks:
       - pharma_net
 
-  #############################################
+  ###########################################################
   # INVENTORY SERVICE
-  #############################################
+  ###########################################################
   inventory_service:
     build:
       context: .
@@ -135,16 +155,14 @@ services:
       - inventory_service/.env
     ports:
       - "9004:9004"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      CATALOG_INTERNAL_URL: http://catalog_service:9002
     depends_on:
       inventory_db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      catalog_service:
-        condition: service_started
-    environment:
-      - CATALOG_INTERNAL_URL=http://catalog_service:9002
-      - REDIS_URL=redis://redis:6379/0
     networks:
       - pharma_net
 
@@ -168,16 +186,15 @@ services:
     networks:
       - pharma_net
 
-  #############################################
+  ###########################################################
   # REDIS
-  #############################################
+  ###########################################################
   redis:
     image: redis:7
     container_name: redis
     ports:
       - "6379:6379"
     healthcheck:
-      # redis-cli is available in the official image
       test: ["CMD-SHELL", "redis-cli ping || exit 1"]
       interval: 3s
       timeout: 2s
@@ -185,19 +202,27 @@ services:
     networks:
       - pharma_net
 
-  #############################################
-  # API GATEWAY
-  #############################################
-  gateway:
-    build:
-      context: .
-      dockerfile: gateway/Dockerfile
-    container_name: gateway
-    env_file:
-      - gateway/.env
+  ###########################################################
+  # KONG — API GATEWAY
+  ###########################################################
+ 
+  kong:
+    image: kong:3.6
+    container_name: kong
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8000
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_PLUGINS: bundled,jwt,rate-limiting
     ports:
       - "8000:8000"
+      - "8001:8001"
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml
     depends_on:
+      redis:
+        condition: service_healthy
       auth_service:
         condition: service_started
       catalog_service:
@@ -206,14 +231,26 @@ services:
         condition: service_started
       inventory_service:
         condition: service_started
-      redis:
-        condition: service_healthy
+    networks:
+      - pharma_net
+  ###########################################################
+  # NGINX LOAD BALANCER
+  ###########################################################
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - kong
     networks:
       - pharma_net
 
-#############################################
+###########################################################
 # NETWORKS & VOLUMES
-#############################################
+###########################################################
 networks:
   pharma_net:
 

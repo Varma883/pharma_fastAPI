@@ -30,7 +30,7 @@ def create_access_token(data: dict, expires_minutes: int = 15):
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iss": "pharma-auth"})
     token = jwt.encode(to_encode, PRIVATE_KEY, algorithm=ALGO)
     return token
 
@@ -41,6 +41,18 @@ def create_refresh_token(data: dict, expires_days: int = 7):
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=expires_days)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iss": "pharma-auth"})
     token = jwt.encode(to_encode, PRIVATE_KEY, algorithm=ALGO)
     return token
+
+
+def verify_access_token(token: str):
+    """
+    Verify access token and return payload.
+    """
+    try:
+        # Verify signature and expiration
+        payload = jwt.decode(token, PUBLIC_KEY, algorithms=[ALGO])
+        return payload
+    except Exception:
+        return None
