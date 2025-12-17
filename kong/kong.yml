@@ -8,7 +8,16 @@ services:
   - name: auth-service
     url: http://auth_service:9001
     routes:
-      # PUBLIC (NO JWT)
+      # PUBLIC (NO JWT) - Docs
+      - name: auth-docs
+        paths:
+          - /auth/docs
+          - /auth/openapi.json
+        strip_path: true
+        methods:
+          - GET
+
+      # PUBLIC (NO JWT) - Auth API (Register/Login)
       - name: auth-public
         paths:
           - /auth/register
@@ -29,9 +38,18 @@ services:
   # CATALOG SERVICE
   ############################################################
   - name: catalog-service
-    # Point to NGINX (Internal LB) instead of direct container
     url: http://nginx:5000/catalog
     routes:
+      # PUBLIC DOCS
+      - name: catalog-docs
+        paths:
+          - /catalog/docs
+          - /catalog/openapi.json
+        strip_path: true
+        methods:
+          - GET
+
+      # SECURED API
       - name: catalog-route
         paths:
           - /catalog
@@ -43,9 +61,18 @@ services:
   # ORDERS SERVICE
   ############################################################
   - name: orders-service
-    # Point to NGINX (Internal LB) instead of direct container
     url: http://nginx:5000/orders
     routes:
+      # PUBLIC DOCS
+      - name: orders-docs
+        paths:
+          - /orders/docs
+          - /orders/openapi.json
+        strip_path: true
+        methods:
+          - GET
+      
+      # SECURED API
       - name: orders-route
         paths:
           - /orders
@@ -59,6 +86,16 @@ services:
   - name: inventory-service
     url: http://inventory_service:9004
     routes:
+      # PUBLIC DOCS
+      - name: inventory-docs
+        paths:
+          - /inventory/docs
+          - /inventory/openapi.json
+        strip_path: true
+        methods:
+          - GET
+
+      # SECURED API
       - name: inventory-route
         paths:
           - /inventory
