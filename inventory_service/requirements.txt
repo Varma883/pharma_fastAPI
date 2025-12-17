@@ -9,3 +9,4 @@ aioredis      # for async Redis support.
 aiobreaker    # for circuit breaker pattern in async code.
 tenacity     # for retrying operations.
 redis>=5.0.0
+prometheus-client

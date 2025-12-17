@@ -3,8 +3,13 @@ from app.db import Base, engine
 from app.routers.drugs import router as drugs_router
 import logging
 import socket
+from app.observability.metrics import metrics_middleware, metrics_endpoint
+from app.observability.logging import setup_logging
+
+setup_logging()
 
 app = FastAPI(title="Catalog Service")
+app.middleware("http")(metrics_middleware("catalog_service"))
 
 
 logger = logging.getLogger("uvicorn")
@@ -29,6 +34,10 @@ def root():
         "hostname": socket.gethostname(),
         "status": "running"
     }
+
+@app.get("/metrics")
+def metrics():
+    return metrics_endpoint()
 
 
 app.include_router(drugs_router, prefix="/drugs")

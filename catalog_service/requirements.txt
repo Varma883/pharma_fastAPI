@@ -5,6 +5,4 @@ psycopg2-binary
 pydantic
 python-jose
 python-dotenv
-
- 
-
+prometheus-client

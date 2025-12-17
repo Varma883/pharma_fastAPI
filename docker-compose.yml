@@ -32,7 +32,7 @@ services:
     volumes:
       - auth_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 3s
       timeout: 3s
       retries: 5
@@ -80,7 +80,7 @@ services:
     volumes:
       - catalog_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 3s
       timeout: 3s
       retries: 5
@@ -136,7 +136,7 @@ services:
     volumes:
       - orders_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 3s
       timeout: 3s
       retries: 5
@@ -179,7 +179,7 @@ services:
     volumes:
       - inventory_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 3s
       timeout: 3s
       retries: 5
@@ -195,7 +195,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping || exit 1"]
+      test: [ "CMD-SHELL", "redis-cli ping || exit 1" ]
       interval: 3s
       timeout: 2s
       retries: 5
@@ -205,7 +205,7 @@ services:
   ###########################################################
   # KONG — API GATEWAY
   ###########################################################
- 
+
   kong:
     image: kong:3.6
     container_name: kong
@@ -248,11 +248,37 @@ services:
     networks:
       - pharma_net
 
+  ###########################################################
+  # PROMETHEUS
+  ###########################################################
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - pharma_net
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - pharma_net
+
 ###########################################################
 # NETWORKS & VOLUMES
 ###########################################################
 networks:
   pharma_net:
+
 
 volumes:
   auth_db_data:

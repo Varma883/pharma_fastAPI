@@ -2,8 +2,14 @@ from fastapi import FastAPI
 from app.db import Base, engine
 from app.routers.auth import router as auth_router
 from app.routers.users import router as users_router
+from app.observability.metrics import metrics_middleware, metrics_endpoint
+from app.observability.logging import setup_logging
+
+setup_logging()
 
 app = FastAPI(title="Auth Service")
+
+app.middleware("http")(metrics_middleware("auth"))
 
 
 @app.on_event("startup")
@@ -21,6 +27,12 @@ def health():
 @app.get("/")
 def root():
     return {"service": "auth", "status": "running"}
+
+@app.get("/metrics")
+def metrics():
+    return metrics_endpoint()
+
+
 
 
 # Mount routers
