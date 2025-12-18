@@ -8,6 +8,8 @@ class DrugBase(BaseModel):
     ndc: str
     form: str | None = None
     strength: str | None = None
+    price : float
+    image_url: str | None = None
 
 
 class DrugCreate(DrugBase):

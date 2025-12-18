@@ -1,4 +1,6 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+import os
 from app.db import Base, engine
 from app.routers.drugs import router as drugs_router
 import logging
@@ -39,5 +41,12 @@ def root():
 def metrics():
     return metrics_endpoint()
 
+
+# Ensure uploads directory exists
+UPLOAD_DIR = "uploads"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+app.mount("/static", StaticFiles(directory=UPLOAD_DIR), name="static")
 
 app.include_router(drugs_router, prefix="/drugs")

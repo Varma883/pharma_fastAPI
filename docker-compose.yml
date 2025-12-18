@@ -54,6 +54,9 @@ services:
     depends_on:
       catalog_db:
         condition: service_healthy
+    volumes:
+      - catalog_db_data:/var/lib/postgresql/data
+      - catalog_images:/app/uploads
     networks:
       - pharma_net
 
@@ -64,6 +67,8 @@ services:
     container_name: catalog_service_replica
     env_file:
       - catalog_service/.env
+    volumes:
+      - catalog_images:/app/uploads
     networks:
       - pharma_net
 
@@ -215,6 +220,7 @@ services:
       KONG_PROXY_LISTEN: 0.0.0.0:8000
       KONG_ADMIN_LISTEN: 0.0.0.0:8001
       KONG_PLUGINS: bundled,jwt,rate-limiting
+      KONG_CLIENT_MAX_BODY_SIZE: 20m
     ports:
       - "8000:8000"
       - "8001:8001"
@@ -283,5 +289,6 @@ networks:
 volumes:
   auth_db_data:
   catalog_db_data:
+  catalog_images:
   orders_db_data:
   inventory_db_data:

@@ -1,29 +1,37 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import User
+from app.jwt_utils import verify_access_token
 
 router = APIRouter(tags=["Users"])
+security = HTTPBearer()
+
+def get_current_user_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    payload = verify_access_token(token)
+    if not payload:
+         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
 
 
 # ===========================================================
-# GET CURRENT USER (requires gateway JWT)
+# GET CURRENT USER (requires valid JWT)
 # ===========================================================
 @router.get("/users/me")
 def read_users_me(
-    request: Request,
+    payload: dict = Depends(get_current_user_token),
     db: Session = Depends(get_db)
 ):
     """
-    Uses headers injected by Gateway:
-    x-username, x-role
+    Uses JWT token to identify user.
     """
-
-    username = request.headers.get("x-username")
+    username = payload.get("sub")
 
     if not username:
-        raise HTTPException(status_code=401, detail="Missing x-username header")
+        raise HTTPException(status_code=401, detail="Invalid token payload")
 
     user = db.query(User).filter(User.username == username).first()
 
@@ -44,14 +52,13 @@ def read_users_me(
 # ===========================================================
 @router.get("/users")
 def list_all_users(
-    request: Request,
+    payload: dict = Depends(get_current_user_token),
     db: Session = Depends(get_db)
 ):
     """
     Only SUPERADMIN can fetch full user list.
     """
-
-    role = request.headers.get("x-role")
+    role = payload.get("role")
 
     if role != "superadmin":
         raise HTTPException(
