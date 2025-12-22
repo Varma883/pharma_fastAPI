@@ -1,0 +1,70 @@
+name: Build & Push All Services to ECR
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-south-1.amazonaws.com
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v2
+
+    ####################################
+    # AUTH SERVICE
+    ####################################
+    - name: Build & Push Auth Service
+      run: |
+        docker build -t $ECR_REGISTRY/auth-service:${IMAGE_TAG} -f auth_service/Dockerfile .
+        docker push $ECR_REGISTRY/auth-service:${IMAGE_TAG}
+
+    ####################################
+    # CATALOG SERVICE
+    ####################################
+    - name: Build & Push Catalog Service
+      run: |
+        docker build -t $ECR_REGISTRY/catalog-service:${IMAGE_TAG} -f catalog_service/Dockerfile .
+        docker push $ECR_REGISTRY/catalog-service:${IMAGE_TAG}
+
+    ####################################
+    # ORDERS SERVICE
+    ####################################
+    - name: Build & Push Orders Service
+      run: |
+        docker build -t $ECR_REGISTRY/orders-service:${IMAGE_TAG} -f orders_service/Dockerfile .
+        docker push $ECR_REGISTRY/orders-service:${IMAGE_TAG}
+
+    ####################################
+    # INVENTORY SERVICE
+    ####################################
+    - name: Build & Push Inventory Service
+      run: |
+        docker build -t $ECR_REGISTRY/inventory-service:${IMAGE_TAG} -f inventory_service/Dockerfile .
+        docker push $ECR_REGISTRY/inventory-service:${IMAGE_TAG}
+
+    ####################################
+    # KONG GATEWAY
+    ####################################
+    - name: Build & Push Kong Gateway
+      run: |
+        docker build -t $ECR_REGISTRY/kong-gateway:${IMAGE_TAG} -f gateway/Dockerfile .
+        docker push $ECR_REGISTRY/kong-gateway:${IMAGE_TAG}
