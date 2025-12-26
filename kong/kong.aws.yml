@@ -2,9 +2,14 @@ _format_version: "3.0"
 
 services:
   - name: auth-service
-    url: url: http://pharma-alb-82018181.ap-south-1.elb.amazonaws.com
+    url: http://pharma-alb-82018181.ap-south-1.elb.amazonaws.com
     routes:
       - name: auth-route
         paths:
           - /auth
         strip_path: true
+        methods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
