@@ -66,5 +66,5 @@ jobs:
     ####################################
     - name: Build & Push Kong Gateway
       run: |
-        docker build -t $ECR_REGISTRY/kong-gateway:${IMAGE_TAG} -f gateway/Dockerfile .
+        docker build -t $ECR_REGISTRY/kong-gateway:${IMAGE_TAG} -f kong/Dockerfile kong
         docker push $ECR_REGISTRY/kong-gateway:${IMAGE_TAG}
