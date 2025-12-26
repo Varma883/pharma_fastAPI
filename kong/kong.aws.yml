@@ -2,7 +2,7 @@ _format_version: "3.0"
 
 services:
   - name: auth-service
-    url: http://auth-service:9001
+    url: url: http://pharma-alb-82018181.ap-south-1.elb.amazonaws.com
     routes:
       - name: auth-route
         paths:
