@@ -7,4 +7,4 @@ services:
       - name: auth-route
         paths:
           - /auth
-        strip_path: false
+        strip_path: true
